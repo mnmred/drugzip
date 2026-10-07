@@ -81,10 +81,30 @@ def build_vae(input_matrix, latent_dim, kl_weight=1.0):
         def __init__(self, kl_weight=1.0, **kwargs):
             super().__init__(**kwargs)
             self.kl_weight = kl_weight
-            # 1. Create trackers
+
+            # Create trackers
             self.recon_tracker = keras.metrics.Mean(name="recon_loss")
             self.kl_tracker = keras.metrics.Mean(name="kl_loss")
             self.total_tracker = keras.metrics.Mean(name="total_loss")
+
+            # Sigma trackers
+            self.sigma_mean_tracker = keras.metrics.Mean(name="sigma_mean")
+            self.sigma_std_tracker = keras.metrics.Mean(name="sigma_std")
+            self.sigma_min_tracker = keras.metrics.Mean(name="sigma_min")
+            self.sigma_max_tracker = keras.metrics.Mean(name="sigma_max")
+
+        @property
+        def metrics(self):
+            return [
+                self.recon_tracker,
+                self.kl_tracker,
+                self.total_tracker,
+                self.beta_tracker,
+                self.sigma_mean_tracker,
+                self.sigma_std_tracker,
+                self.sigma_min_tracker,
+                self.sigma_max_tracker,
+        ]
 
         def call(self, inputs_list):
             x_in, x_out, z_m, z_lv = inputs_list
@@ -95,6 +115,14 @@ def build_vae(input_matrix, latent_dim, kl_weight=1.0):
             # KL Loss
             kl = -0.5 * tf.reduce_sum(1 + z_lv - tf.square(z_m) - tf.exp(z_lv), axis=-1)
             kl = tf.reduce_mean(kl)
+
+            # Sigma
+            sigma = tf.exp(0.5 * z_lv)
+
+            sigma_mean = tf.reduce_mean(sigma)
+            sigma_std = tf.math.reduce_std(sigma)
+            sigma_min = tf.reduce_min(sigma)
+            sigma_max = tf.reduce_max(sigma)
             
             # Total Loss
             total_loss = recon_loss + self.kl_weight * kl
@@ -104,6 +132,12 @@ def build_vae(input_matrix, latent_dim, kl_weight=1.0):
             self.recon_tracker.update_state(recon_loss)
             self.kl_tracker.update_state(kl)
             self.total_tracker.update_state(total_loss)
+
+            self.sigma_mean_tracker.update_state(sigma_mean)
+            self.sigma_std_tracker.update_state(sigma_std)
+            self.sigma_min_tracker.update_state(sigma_min)
+            self.sigma_max_tracker.update_state(sigma_max)
+
 
             return x_out
 
@@ -125,21 +159,23 @@ def build_vae(input_matrix, latent_dim, kl_weight=1.0):
     return vae, encoder
 
 # --- EXECUTION VAE ---
-kl_weights = [0.0, 0.5, 1.0, 1.5, 2.0]  # Different beta values to test
+kl_weights = [0.0]  # Different beta values to test
 directory_path = "Data/Drug_Representation/Sanger_Full/" # Replace with your actual path to the CSV files
 input_matrix = build_input(directory_path)
+
 for kl_weight in kl_weights:
     # INITIALIZE W&B RUN
     run = wandb.init(
         project="CCSynergy-VAE",
-        name=f"vae-full-kl-{kl_weight}",
+        name=f"vae-full-kl-{kl_weight}-b256",
         config={
             "kl_weight": kl_weight,
             "latent_dim": 128,
             "learning_rate": 1e-4,
             "epochs": 500,
-            "batch_size": 8,
-            "layers": [2688, 2176, 1664, 1152, 768, 384]
+            "batch_size": 256,
+            "layers": [2688, 2176, 1664, 1152, 768, 384],
+            "scaling": None
         }
     )
 
@@ -153,13 +189,13 @@ for kl_weight in kl_weights:
         restore_best_weights=True
     )
 
-    # Training: Use a small batch size since we only have 62 drugs
-    print("Starting training... Keep an eye on the 'loss' value below.")
+    # Training: Use a batch size accordingly to the dataset size. For 1.2M samples, a batch size of 256 is reasonable.
+    print(f"\nStarting training for Target Beta = {kl_weight}... ")
     history = vae.fit(
         input_matrix, 
         input_matrix, 
         epochs=500,          # Set high; EarlyStopping will act as the "brake"
-        batch_size=8, 
+        batch_size=256, 
         verbose=0,           # 1 shows the progress bar and the Loss per epoch
         callbacks=[early_stop, WandbMetricsLogger()]
     )
@@ -167,11 +203,41 @@ for kl_weight in kl_weights:
     # Generate the compressed signatures
     compressed_data = encoder.predict(input_matrix)
 
+    # Generate reconstructed data (decoder output)
+    reconstructed_data = vae.predict(input_matrix)
+
     # Save to CSV
     df_25in1 = pd.DataFrame(compressed_data)
-    filename = f"drugzip-25in1-full-{kl_weight}.csv"
-    df_25in1.to_csv(filename, index=False)
+    compressed_filename = f"drugzip-25in1-full-{kl_weight}-b256.csv"
+    df_25in1.to_csv(compressed_filename, index=False)
+
+    
+    # Save reconstructed CSV
+    df_reconstructed = pd.DataFrame(reconstructed_data)
+    reconstructed_filename = f"drugzip-reconstructed-full-{kl_weight}-b256.csv"
+    df_reconstructed.to_csv(reconstructed_filename, index=False)
+
+    # Save models in both formats
+    encoder_keras_filename = f"drugzip-encoder-full-{kl_weight}-b256.keras"
+    encoder_h5_filename = f"drugzip-encoder-full-{kl_weight}-b256.h5"
+    vae_keras_filename = f"drugzip-vae-full-{kl_weight}-b256.keras"
+    vae_h5_filename = f"drugzip-vae-full-{kl_weight}-b256.h5"
+
+    encoder.save(encoder_keras_filename)
+    encoder.save(encoder_h5_filename)
+    vae.save(vae_keras_filename)
+    vae.save(vae_h5_filename)
+
+    # Log files to wandb
+    run.log_artifact(compressed_filename, type="compressed_vectors")
+    run.log_artifact(reconstructed_filename, type="reconstructed_data")
+    run.log_artifact(encoder_keras_filename, type="encoder_model")
+    run.log_artifact(encoder_h5_filename, type="encoder_model")
+    run.log_artifact(vae_keras_filename, type="vae_model")
+    run.log_artifact(vae_h5_filename, type="vae_model")
 
     print("\nCSV generated with shape:", compressed_data.shape)
-    # plot_drug_signatures(compressed_data, kl_weight)
+    print(f"Reconstructed data saved with shape: {reconstructed_data.shape}")
+    print(f"Models saved in both .keras and .h5 formats")
+    print(f"All files logged to wandb")
     run.finish()
