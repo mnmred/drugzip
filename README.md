@@ -7,6 +7,7 @@ The full thesis can be found at the TU Delft Education Repository:
 
 ## Table of Contents
 - [Overview](#overview)
+- [Data](#data)
 <!--  - [Repository Structure](#repository-structure) -->
 - [Environment Setup](#environment-setup)
 - [Usage](#usage)
@@ -25,6 +26,10 @@ The primary objectives of this codebase are:
 3. **ChemCPA Reproduction**: Implementing the ChemCPA framework.
 4. **Sensitivity DNN**: Training and evaluating a custom Deep Neural Network designed for sensitivity predictions.
 
+## Data
+
+The signature data is available on the official Chemical Checker website: <https://chemicalchecker.com/downloads/signature3>.
+You may download each signature, file by file, and then use the csv_signature_generator.py to transalte them into usable csv file for the DrugZip compression.
 <!-- 
 ## Repository Structure
 
