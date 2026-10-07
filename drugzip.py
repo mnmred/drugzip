@@ -218,10 +218,10 @@ for kl_weight in kl_weights:
     df_reconstructed.to_csv(reconstructed_filename, index=False)
 
     # Save models in both formats
-    encoder_keras_filename = f"drugzip-encoder-full-{kl_weight}-b256.keras"
-    encoder_h5_filename = f"drugzip-encoder-full-{kl_weight}-b256.h5"
-    vae_keras_filename = f"drugzip-vae-full-{kl_weight}-b256.keras"
-    vae_h5_filename = f"drugzip-vae-full-{kl_weight}-b256.h5"
+    encoder_keras_filename = f"encoder-full-{kl_weight}-b256.keras"
+    encoder_h5_filename = f"encoder-full-{kl_weight}-b256.h5"
+    vae_keras_filename = f"vae-full-{kl_weight}-b256.keras"
+    vae_h5_filename = f"vae-full-{kl_weight}-b256.h5"
 
     encoder.save(encoder_keras_filename)
     encoder.save(encoder_h5_filename)
