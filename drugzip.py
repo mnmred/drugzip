@@ -160,7 +160,7 @@ def build_vae(input_matrix, latent_dim, kl_weight=1.0):
 
 # --- EXECUTION VAE ---
 kl_weights = [0.0]  # Different beta values to test
-directory_path = "Data/Drug_Representation/Sanger_Full/" # Replace with your actual path to the CSV files
+directory_path = "Data/Drug_Representation/ChemicalChecker_Full/" # Replace with your actual path to the CSV files
 input_matrix = build_input(directory_path)
 
 for kl_weight in kl_weights:
