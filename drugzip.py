@@ -1,6 +1,7 @@
 # Making this VAE for CCSynergy.
 # It will intake the 25 signatures of each drug and compress them into a smaller latent space.
 
+import os
 from unicodedata import name
 
 import pandas as pd
@@ -13,12 +14,19 @@ from tensorflow.keras.callbacks import EarlyStopping
 import wandb
 from wandb.integration.keras import WandbMetricsLogger
 
-wandb.login(key="INSERT_YOUR_KEY_HERE")
+wandb.login(key="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")
 
 
 # Usually in Matrix MxN, M is number of samples, N is number of features. This adapts our 
 # signature matrix accordingly.
 def build_input(directory_path):
+    # Check if input_matrix.pth exists, load if it does, otherwise build it
+    if os.path.exists(directory_path + "input_matrix.npy"):
+        print("Loading input matrix from file...")
+        return np.load(directory_path + "input_matrix.npy")
+    else:
+        print("Building input matrix...")
+
     num_drugs = 1230665
     matrix = np.zeros((num_drugs, 25 * 128))
     
@@ -36,6 +44,8 @@ def build_input(directory_path):
         
         # Free up memory immediately
         del df 
+
+    np.save(directory_path + "input_matrix.npy", matrix)
 
     return matrix
 
@@ -166,7 +176,7 @@ input_matrix = build_input(directory_path)
 for kl_weight in kl_weights:
     # INITIALIZE W&B RUN
     run = wandb.init(
-        project="CCSynergy-VAE",
+        project="Paper-DrugZip",
         name=f"vae-full-kl-{kl_weight}-b256",
         config={
             "kl_weight": kl_weight,
@@ -175,30 +185,47 @@ for kl_weight in kl_weights:
             "epochs": 500,
             "batch_size": 256,
             "layers": [2688, 2176, 1664, 1152, 768, 384],
-            "scaling": None
+            "scaling": None,
+            "validation_fraction": 0.2,
+            "split_seed": 42,
+            "monitor": "val_loss",
+            "patience": 10,
+            "start_from_epoch": 0
         }
     )
+
+    # Shuffle rows once, then split with views to avoid copying the matrix.
+    np.random.default_rng(run.config.split_seed).shuffle(input_matrix, axis=0)
+    split_at = int(len(input_matrix) * (1 - run.config.validation_fraction))
+    x_train, x_val = input_matrix[:split_at], input_matrix[split_at:]
 
     latent_dimension = run.config.latent_dim # Compression target
 
     vae, encoder = build_vae(input_matrix, latent_dimension, kl_weight)
 
     early_stop = EarlyStopping(
-        monitor='loss', 
-        patience=10, 
-        restore_best_weights=True
+        monitor=run.config.monitor,
+        patience=run.config.patience,
+        min_delta=0,
+        restore_best_weights=True,
+        start_from_epoch=run.config.start_from_epoch
     )
 
     # Training: Use a batch size accordingly to the dataset size. For 1.2M samples, a batch size of 256 is reasonable.
     print(f"\nStarting training for Target Beta = {kl_weight}... ")
     history = vae.fit(
-        input_matrix, 
-        input_matrix, 
+        x_train,
+        validation_data=(x_val,),
+        shuffle=True,
         epochs=500,          # Set high; EarlyStopping will act as the "brake"
         batch_size=256, 
         verbose=0,           # 1 shows the progress bar and the Loss per epoch
         callbacks=[early_stop, WandbMetricsLogger()]
     )
+
+    # Release the shuffled training data and reload the original molecule order.
+    del x_train, x_val, input_matrix
+    input_matrix = build_input(directory_path)
 
     # Generate the compressed signatures
     compressed_data = encoder.predict(input_matrix)
@@ -241,3 +268,5 @@ for kl_weight in kl_weights:
     print(f"Models saved in both .keras and .h5 formats")
     print(f"All files logged to wandb")
     run.finish()
+    
+    del compressed_data, reconstructed_data, df_25in1, df_reconstructed
