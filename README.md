@@ -1,4 +1,4 @@
-# Master's Thesis (TU Delft - DSAIT Programme): DrugZip, CCSynergy, ChemCPA, and Sensitivity DNN
+# [Repo under updates] Master's Thesis (TU Delft - DSAIT Programme): DrugZip, CCSynergy, ChemCPA, and Sensitivity DNN
 
 This repository contains the code for my thesis work at TU Delft. It provides the implementation and scripts necessary to generate DrugZip representations from a database of molecules, reproduce existing models (CCSynergy and ChemCPA), and train my custom Sensitivity Deep Neural Network (DNN).
 
