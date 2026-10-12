@@ -109,7 +109,6 @@ def build_vae(input_matrix, latent_dim, kl_weight=1.0):
                 self.recon_tracker,
                 self.kl_tracker,
                 self.total_tracker,
-                self.beta_tracker,
                 self.sigma_mean_tracker,
                 self.sigma_std_tracker,
                 self.sigma_min_tracker,
