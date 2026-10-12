@@ -1,0 +1,146 @@
+import pandas as pd
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras.callbacks import EarlyStopping
+from sklearn.preprocessing import StandardScaler
+import wandb
+from wandb.integration.keras import WandbMetricsLogger
+
+wandb.login(key="Insert your W&B API key here")
+
+
+# Usually in Matrix MxN, M is number of samples, N is number of features. This adapts our 
+# signature matrix accordingly.
+def build_input(directory_path):
+    # Check if input_matrix.pth exists, load if it does, otherwise build it
+    if os.path.exists(directory_path + "input_matrix.npy"):
+        print("Loading input matrix from file...")
+        return np.load(directory_path + "input_matrix.npy")
+    else:
+        print("Building input matrix...")
+
+    num_drugs = 1230665
+    matrix = np.zeros((num_drugs, 25 * 128))
+    
+    FeatureName = ['A1','A2','A3','A4','A5','B1','B2','B3','B4','B5',
+                   'C1','C2','C3','C4','C5','D1','D2','D3','D4','D5',
+                   'E1','E2','E3','E4','E5']
+
+    for i, signature in enumerate(FeatureName):
+        file_path = f"{directory_path}{signature}.csv"
+        print(f"Loading {signature}...")
+        df = pd.read_csv(file_path, usecols=range(1, 129), dtype=np.float64, engine='c')
+        
+        # Vectorized
+        matrix[:, i*128 : (i+1)*128] = df.values
+        
+        # Free up memory immediately
+        del df 
+
+    np.save(directory_path + "input_matrix.npy", matrix)
+
+    return matrix
+
+
+# --- CLEAN AUTOENCODER BUILD ---
+def build_ae(input_matrix, latent_dim):
+    input_dim = input_matrix.shape[1]
+    
+    # --- ENCODER ---
+    # We remove the z_log_var and the Sampling layer entirely
+    inputs = layers.Input(shape=(input_dim,))
+    # Noise like VAE
+    x = layers.GaussianNoise(0.1)(inputs)
+
+    x = layers.Dense(2688, activation='relu')(x)
+    x = layers.Dense(2176, activation='relu')(x)
+    x = layers.Dense(1664, activation='relu')(x)
+    x = layers.Dense(1152, activation='relu')(x)
+    x = layers.Dense(768, activation='relu')(x)
+    x = layers.Dense(384, activation='relu')(x)
+    
+    # Dropout to avoid overfitting
+    x = layers.Dropout(0.2)(x)
+
+    # The bottleneck is now just a single Dense layer
+    latent_space = layers.Dense(latent_dim, name="latent_bottleneck")(x)
+    
+    encoder = keras.Model(inputs, latent_space, name="encoder")
+
+    # --- DECODER ---
+    decoder_input = layers.Input(shape=(latent_dim,))
+    dx = layers.Dense(384, activation='relu')(decoder_input)
+    dx = layers.Dense(768, activation='relu')(dx)
+    dx = layers.Dense(1152, activation='relu')(dx)
+    dx = layers.Dense(1664, activation='relu')(dx)
+    dx = layers.Dense(2176, activation='relu')(dx)
+    dx = layers.Dense(2688, activation='relu')(dx)
+    decoder_outputs = layers.Dense(input_dim)(dx) 
+    
+    decoder = keras.Model(decoder_input, decoder_outputs, name="decoder")
+
+    # --- FULL AUTOENCODER ---
+    ae_outputs = decoder(encoder(inputs))
+    autoencoder = keras.Model(inputs, ae_outputs, name="autoencoder")
+    
+    # Simple MSE loss is equivalent to your reconstruction loss
+    autoencoder.compile(optimizer=keras.optimizers.Adam(learning_rate=1e-4), loss='mse')
+
+    return autoencoder, encoder
+
+# --- EXECUTION ---
+input_matrix = build_input("path/to/your/data/")
+
+run = wandb.init(
+    project="Paper-DrugZip",
+    name="ae-full-b128",
+    config={
+        "latent_dim": 128,
+        "learning_rate": 1e-4,
+        "epochs": 500,
+        "batch_size": 128,
+        "layers": [2688, 2176, 1664, 1152, 768, 384]
+    }
+)
+
+latent_dimension = run.config.latent_dim
+autoencoder, encoder = build_ae(input_matrix, latent_dimension)
+
+early_stop = EarlyStopping(
+    monitor='loss', 
+    patience=10, 
+    restore_best_weights=True,
+    start_from_epoch=100
+)
+
+print("\nStarting training for Standard Autoencoder...")
+autoencoder.fit(
+    input_matrix, 
+    input_matrix, 
+    epochs=run.config.epochs, 
+    batch_size=run.config.batch_size, 
+    verbose=1, 
+    callbacks=[early_stop, WandbMetricsLogger()]
+)
+
+encoder.save("ae_encoder-do.keras")
+autoencoder.save("ae_full.keras")
+    
+# Logs the model to W&B
+run.save("ae_encoder-do.keras")
+
+# Generate the compressed signatures
+compressed_data = encoder.predict(input_matrix)
+
+# Generate reconstructed data
+reconstructed_data = autoencoder.predict(input_matrix)
+
+# Save to CSV
+df_25in1 = pd.DataFrame(compressed_data)
+compressed_filename = f"ae-25in1-full-b{run.config.batch_size}.csv"
+df_25in1.to_csv(compressed_filename, index=False)
+
+print("\nCSV generated with shape:", compressed_data.shape)
+run.finish()

@@ -14,7 +14,7 @@ from tensorflow.keras.callbacks import EarlyStopping
 import wandb
 from wandb.integration.keras import WandbMetricsLogger
 
-wandb.login(key="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")
+wandb.login(key="Insert your W&B API key here")
 
 
 # Usually in Matrix MxN, M is number of samples, N is number of features. This adapts our 
@@ -235,7 +235,7 @@ for kl_weight in kl_weights:
 
     # Save to CSV
     df_25in1 = pd.DataFrame(compressed_data)
-    compressed_filename = f"drugzip-25in1-full-{kl_weight}-b256.csv"
+    compressed_filename = f"drugzip-25in1-full-{kl_weight}-b{run.config.batch_size}.csv"
     df_25in1.to_csv(compressed_filename, index=False)
 
     
