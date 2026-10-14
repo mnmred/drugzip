@@ -85,45 +85,66 @@ def build_ae(input_matrix, latent_dim):
     ae_outputs = decoder(encoder(inputs))
     autoencoder = keras.Model(inputs, ae_outputs, name="autoencoder")
     
-    # Simple MSE loss is equivalent to your reconstruction loss
+    # MSE loss 
     autoencoder.compile(optimizer=keras.optimizers.Adam(learning_rate=1e-4), loss='mse')
+    
 
     return autoencoder, encoder
 
 # --- EXECUTION ---
-input_matrix = build_input("path/to/your/data/")
+directory_path = "path/to/your/data/"
+input_matrix = build_input(directory_path)
 
 run = wandb.init(
     project="Paper-DrugZip",
-    name="ae-full-b128",
+    name="ae-full-b256",
     config={
         "latent_dim": 128,
         "learning_rate": 1e-4,
         "epochs": 500,
-        "batch_size": 128,
-        "layers": [2688, 2176, 1664, 1152, 768, 384]
+        "batch_size": 256,
+        "layers": [2688, 2176, 1664, 1152, 768, 384],
+        "scaling": None,
+        "validation_fraction": 0.2,
+        "split_seed": 42,
+        "monitor": "val_loss",
+        "patience": 10,
+        "start_from_epoch": 0
     }
 )
+
+# Same shuffle + split as the VAE script (same seed => identical train/val rows)
+np.random.default_rng(run.config.split_seed).shuffle(input_matrix, axis=0)
+split_at = int(len(input_matrix) * (1 - run.config.validation_fraction))
+x_train, x_val = input_matrix[:split_at], input_matrix[split_at:]
 
 latent_dimension = run.config.latent_dim
 autoencoder, encoder = build_ae(input_matrix, latent_dimension)
 
 early_stop = EarlyStopping(
-    monitor='loss', 
-    patience=10, 
+    monitor=run.config.monitor,
+    patience=run.config.patience,
+    min_delta=0,
     restore_best_weights=True,
-    start_from_epoch=100
+    start_from_epoch=run.config.start_from_epoch
 )
 
 print("\nStarting training for Standard Autoencoder...")
 autoencoder.fit(
-    input_matrix, 
-    input_matrix, 
-    epochs=run.config.epochs, 
-    batch_size=run.config.batch_size, 
-    verbose=1, 
+    x_train,
+    x_train,
+    validation_data=(x_val, x_val),   # AE needs (x, y); the VAE only needs (x,)
+    shuffle=True,
+    epochs=run.config.epochs,
+    batch_size=run.config.batch_size,
+    verbose=0,
     callbacks=[early_stop, WandbMetricsLogger()]
 )
+
+# Release the shuffled data and reload the original molecule order,
+# otherwise the exported compressed vectors won't line up with the drugs.
+del x_train, x_val, input_matrix
+input_matrix = build_input(directory_path)
 
 encoder.save("ae_encoder-do.keras")
 autoencoder.save("ae_full.keras")
