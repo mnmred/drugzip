@@ -85,11 +85,20 @@ def build_ae(input_matrix, latent_dim):
     ae_outputs = decoder(encoder(inputs))
     autoencoder = keras.Model(inputs, ae_outputs, name="autoencoder")
     
-    # MSE loss 
-    autoencoder.compile(optimizer=keras.optimizers.Adam(learning_rate=1e-4), loss='mse')
-    
+    # SSE loss is equivalent to the VAE reconstruction loss
+    # autoencoder.compile(optimizer=keras.optimizers.Adam(learning_rate=1e-4), loss='mse')
+    autoencoder.compile(
+    optimizer=keras.optimizers.Adam(learning_rate=1e-4),
+    loss=sum_squared_error
+    )
 
     return autoencoder, encoder
+
+@keras.saving.register_keras_serializable()
+def sum_squared_error(y_true, y_pred):
+    # Per-sample sum over features; Keras then averages over the batch.
+    # Identical to recon_loss in VaeLossLayer.
+    return tf.reduce_sum(tf.square(y_true - y_pred), axis=-1)
 
 # --- EXECUTION ---
 directory_path = "path/to/your/data/"
