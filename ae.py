@@ -134,7 +134,7 @@ autoencoder, encoder = build_ae(input_matrix, latent_dimension)
 early_stop = EarlyStopping(
     monitor=run.config.monitor,
     patience=run.config.patience,
-    min_delta=0,
+    min_delta=0,   
     restore_best_weights=True,
     start_from_epoch=run.config.start_from_epoch
 )
