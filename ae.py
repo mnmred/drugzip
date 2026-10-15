@@ -218,15 +218,15 @@ df_25in1.to_csv(compressed_filename, index=False)
 
 # Save reconstructed CSV
 df_reconstructed = pd.DataFrame(reconstructed_data)
-reconstructed_filename = f"ae-25in1-reconstructed-full-{kl_weight}-b256.csv"
+reconstructed_filename = f"ae-25in1-reconstructed-full-b256.csv"
 df_reconstructed.to_csv(reconstructed_filename, index=False)
 
 
 # Save models in both formats
-encoder_keras_filename = f"ae-encoder-full-{kl_weight}-b256.keras"
-encoder_h5_filename = f"ae-encoder-full-{kl_weight}-b256.h5"
-vae_keras_filename = f"ae-full-{kl_weight}-b256.keras"
-vae_h5_filename = f"ae-full-{kl_weight}-b256.h5"
+encoder_keras_filename = f"ae-encoder-full-b256.keras"
+encoder_h5_filename = f"ae-encoder-full-b256.h5"
+vae_keras_filename = f"ae-full-b256.keras"
+vae_h5_filename = f"ae-full-b256.h5"
 
 encoder.save(encoder_keras_filename)
 encoder.save(encoder_h5_filename)
