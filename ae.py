@@ -9,16 +9,37 @@ from sklearn.preprocessing import StandardScaler
 import wandb
 from wandb.integration.keras import WandbMetricsLogger
 
-wandb.login(key="Insert your W&B API key here")
+# Uses WANDB_API_KEY from the environment when present
+if os.environ.get("WANDB_API_KEY"):
+    wandb.login(key=os.environ["WANDB_API_KEY"])
+
+
+def _ensure_trailing_sep(path: str) -> str:
+    return path if path.endswith(("/", "\\")) else path + os.sep
 
 
 # Usually in Matrix MxN, M is number of samples, N is number of features. This adapts our 
 # signature matrix accordingly.
+def _max_samples_from_env() -> int | None:
+    raw = os.environ.get("DRUGZIP_MAX_SAMPLES")
+    return int(raw) if raw else None
+
+
 def build_input(directory_path):
-    # Check if input_matrix.pth exists, load if it does, otherwise build it
-    if os.path.exists(directory_path + "input_matrix.npy"):
+    directory_path = _ensure_trailing_sep(directory_path)
+    max_samples = _max_samples_from_env()
+    npy_path = directory_path + "input_matrix.npy"
+
+    # Check if input_matrix.npy exists, load if it does, otherwise build it
+    if os.path.exists(npy_path):
         print("Loading input matrix from file...")
-        return np.load(directory_path + "input_matrix.npy")
+        if max_samples is not None:
+            mm = np.load(npy_path, mmap_mode="r")
+            n = min(max_samples, mm.shape[0])
+            print(f"Smoke test: using first {n} / {mm.shape[0]} rows")
+            # copy: mmap views are read-only and break in-place shuffle
+            return np.array(mm[:n], dtype=np.float64, copy=True)
+        return np.load(npy_path)
     else:
         print("Building input matrix...")
 
@@ -40,7 +61,11 @@ def build_input(directory_path):
         # Free up memory immediately
         del df 
 
-    np.save(directory_path + "input_matrix.npy", matrix)
+    np.save(npy_path, matrix)
+    if max_samples is not None:
+        n = min(max_samples, matrix.shape[0])
+        print(f"Smoke test: using first {n} / {matrix.shape[0]} rows")
+        return matrix[:n].copy()
 
     return matrix
 
@@ -95,31 +120,49 @@ def build_ae(input_matrix, latent_dim):
 
     return autoencoder, encoder
 
-@keras.saving.register_keras_serializable()
+# TF/Keras version skew: some builds expose register under utils, not saving.
+try:
+    _register_serializable = keras.saving.register_keras_serializable
+except AttributeError:
+    _register_serializable = keras.utils.register_keras_serializable
+
+
+@_register_serializable()
 def sum_squared_error(y_true, y_pred):
     # Per-sample sum over features; Keras then averages over the batch.
     # Identical to recon_loss in VaeLossLayer.
     return tf.reduce_sum(tf.square(y_true - y_pred), axis=-1)
 
 # --- EXECUTION ---
-directory_path = "path/to/your/data/"
+_REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+_DEFAULT_DATA = os.path.join(_REPO_ROOT, "Data", "ChemicalChecker_Full")
+directory_path = _ensure_trailing_sep(
+    os.environ.get("DRUGZIP_DATA_DIR", _DEFAULT_DATA)
+)
+print(f"Using data directory: {directory_path}")
 input_matrix = build_input(directory_path)
+
+_epochs = int(os.environ.get("DRUGZIP_EPOCHS", "500"))
+_batch_size = int(os.environ.get("DRUGZIP_BATCH_SIZE", "256"))
+_patience = int(os.environ.get("DRUGZIP_PATIENCE", "10"))
+_run_name = os.environ.get("DRUGZIP_RUN_NAME", "ae-full-b256")
 
 run = wandb.init(
     project="Paper-DrugZip",
-    name="ae-full-b256",
+    name=_run_name,
     config={
         "latent_dim": 128,
         "learning_rate": 1e-4,
-        "epochs": 500,
-        "batch_size": 256,
+        "epochs": _epochs,
+        "batch_size": _batch_size,
         "layers": [2688, 2176, 1664, 1152, 768, 384],
         "scaling": None,
         "validation_fraction": 0.2,
         "split_seed": 42,
         "monitor": "val_loss",
-        "patience": 10,
-        "start_from_epoch": 0
+        "patience": _patience,
+        "start_from_epoch": 0,
+        "max_samples": _max_samples_from_env(),
     }
 )
 
@@ -147,7 +190,7 @@ autoencoder.fit(
     shuffle=True,
     epochs=run.config.epochs,
     batch_size=run.config.batch_size,
-    verbose=0,
+    verbose=int(os.environ.get("DRUGZIP_VERBOSE", "0")),
     callbacks=[early_stop, WandbMetricsLogger()]
 )
 

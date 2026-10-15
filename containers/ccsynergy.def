@@ -1,0 +1,128 @@
+Bootstrap: docker
+From: condaforge/miniforge3:latest
+
+# DrugZip / CCSynergy stack (README Environment Setup + tensorflow/wandb).
+# Project code is NOT baked in — bind-mount the repo at runtime.
+# Build from the repo root so environment.yml is on the %files path:
+#   apptainer build containers/ccsynergy.sif containers/ccsynergy.def
+
+%files
+    environment.yml /opt/environment.yml
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        git git-lfs build-essential \
+        ca-certificates curl wget \
+        fontconfig fonts-dejavu-core \
+        libglib2.0-0 libsm6 libxrender1 libxext6 libgl1 \
+        tree time vim ncdu tmux rsync
+    git lfs install
+    fc-cache -fv
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+
+    mkdir -p \
+        /opt/.cache/matplotlib \
+        /opt/.cache/fontconfig \
+        /opt/.cache/wandb
+    chmod -R 777 /opt/.cache
+
+    # Drop keys that are conda config, not env-file fields
+    grep -vE '^(channel_priority:)' /opt/environment.yml > /tmp/environment.yml
+
+    . "/opt/conda/etc/profile.d/conda.sh"
+    mamba env create -y -f /tmp/environment.yml
+    conda activate ccsynergy
+
+    mkdir -p /opt/conda/envs/ccsynergy/etc/conda/activate.d
+    cat > /opt/conda/envs/ccsynergy/etc/conda/activate.d/env_vars.sh <<'EOF'
+export LD_LIBRARY_PATH=/opt/conda/envs/ccsynergy/lib:${LD_LIBRARY_PATH:-}
+EOF
+
+    conda clean -afy || true
+    mamba clean --all -y || true
+
+    echo '. "/opt/conda/etc/profile.d/conda.sh"' >> "${APPTAINER_ENVIRONMENT}"
+    echo 'conda activate ccsynergy' >> "${APPTAINER_ENVIRONMENT}"
+    echo 'export LD_LIBRARY_PATH=/opt/conda/envs/ccsynergy/lib:${LD_LIBRARY_PATH:-}' >> "${APPTAINER_ENVIRONMENT}"
+
+%environment
+    export PATH="/opt/conda/bin:${PATH}"
+    export PYTHONUNBUFFERED=1
+    export PYTHONNOUSERSITE=1
+    export XDG_CACHE_HOME=/opt/.cache
+    export MPLCONFIGDIR=/opt/.cache/matplotlib
+    export MPLBACKEND=Agg
+    export FONTCONFIG_PATH=/etc/fonts
+
+%runscript
+    if [ $# -gt 0 ]; then
+        exec "$@"
+    else
+        cat <<'EOF'
+ccsynergy / DrugZip dependency container (Python 3.10; README pins + tensorflow/wandb).
+Project code is NOT baked in — bind-mount the repo at runtime.
+
+  apptainer exec --nv --bind $PROJECTDIR:$PROJECTDIR \
+      $PROJECTDIR/containers/ccsynergy.sif \
+      python ae.py
+EOF
+    fi
+
+%test
+    export XDG_CACHE_HOME=/opt/.cache
+    export MPLCONFIGDIR=/opt/.cache/matplotlib
+    export MPLBACKEND=Agg
+    . "/opt/conda/etc/profile.d/conda.sh"
+    conda activate ccsynergy
+    python - <<'PY'
+import sys
+import numpy
+import scipy
+import pandas
+import sklearn
+import tensorflow as tf
+import wandb
+import h5py
+
+print("Python:", sys.version.split()[0])
+print(
+    "Deps OK | numpy:", numpy.__version__,
+    "| scipy:", scipy.__version__,
+    "| pandas:", pandas.__version__,
+    "| sklearn:", sklearn.__version__,
+    "| tensorflow:", tf.__version__,
+    "| wandb:", wandb.__version__,
+    "| h5py:", h5py.__version__,
+)
+PY
+
+%labels
+    Author NiekBrouwer
+    Version 1.0.0
+    Description CCSynergy/DrugZip env from README; code bind-mounted at runtime
+
+%help
+    Build from the repo root (needs environment.yml on the build path):
+
+        cd /path/to/drugzip
+        apptainer build containers/ccsynergy.sif containers/ccsynergy.def
+
+    Copy ccsynergy.sif to the cluster (e.g. $PROJECTDIR/containers/).
+
+    On the cluster, bind-mount the project (use --nv for GPU training):
+
+        apptainer exec --nv --bind $PROJECTDIR:$PROJECTDIR \
+            $PROJECTDIR/containers/ccsynergy.sif \
+            python ae.py
+
+    Interactive shell:
+
+        apptainer shell --nv --bind $PROJECTDIR:$PROJECTDIR \
+            $PROJECTDIR/containers/ccsynergy.sif
+
+    Keep environment.yml and this .def in sync when adding packages.

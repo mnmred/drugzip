@@ -14,16 +14,37 @@ from tensorflow.keras.callbacks import EarlyStopping
 import wandb
 from wandb.integration.keras import WandbMetricsLogger
 
-wandb.login(key="Insert your W&B API key here")
+# Uses WANDB_API_KEY from the environment when present
+if os.environ.get("WANDB_API_KEY"):
+    wandb.login(key=os.environ["WANDB_API_KEY"])
+
+
+def _ensure_trailing_sep(path: str) -> str:
+    return path if path.endswith(("/", "\\")) else path + os.sep
 
 
 # Usually in Matrix MxN, M is number of samples, N is number of features. This adapts our 
 # signature matrix accordingly.
+def _max_samples_from_env() -> int | None:
+    raw = os.environ.get("DRUGZIP_MAX_SAMPLES")
+    return int(raw) if raw else None
+
+
 def build_input(directory_path):
-    # Check if input_matrix.pth exists, load if it does, otherwise build it
-    if os.path.exists(directory_path + "input_matrix.npy"):
+    directory_path = _ensure_trailing_sep(directory_path)
+    max_samples = _max_samples_from_env()
+    npy_path = directory_path + "input_matrix.npy"
+
+    # Check if input_matrix.npy exists, load if it does, otherwise build it
+    if os.path.exists(npy_path):
         print("Loading input matrix from file...")
-        return np.load(directory_path + "input_matrix.npy")
+        if max_samples is not None:
+            mm = np.load(npy_path, mmap_mode="r")
+            n = min(max_samples, mm.shape[0])
+            print(f"Smoke test: using first {n} / {mm.shape[0]} rows")
+            # copy: mmap views are read-only and break in-place shuffle
+            return np.array(mm[:n], dtype=np.float64, copy=True)
+        return np.load(npy_path)
     else:
         print("Building input matrix...")
 
@@ -45,7 +66,11 @@ def build_input(directory_path):
         # Free up memory immediately
         del df 
 
-    np.save(directory_path + "input_matrix.npy", matrix)
+    np.save(npy_path, matrix)
+    if max_samples is not None:
+        n = min(max_samples, matrix.shape[0])
+        print(f"Smoke test: using first {n} / {matrix.shape[0]} rows")
+        return matrix[:n].copy()
 
     return matrix
 
@@ -169,27 +194,41 @@ def build_vae(input_matrix, latent_dim, kl_weight=1.0):
 
 # --- EXECUTION VAE ---
 kl_weights = [0.0]  # Different beta values to test
-directory_path = "Data/Drug_Representation/ChemicalChecker_Full/" # Replace with your actual path to the CSV files
+_REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+_DEFAULT_DATA = os.path.join(_REPO_ROOT, "Data", "ChemicalChecker_Full")
+directory_path = _ensure_trailing_sep(
+    os.environ.get("DRUGZIP_DATA_DIR", _DEFAULT_DATA)
+)
+print(f"Using data directory: {directory_path}")
 input_matrix = build_input(directory_path)
+
+_epochs = int(os.environ.get("DRUGZIP_EPOCHS", "500"))
+_batch_size = int(os.environ.get("DRUGZIP_BATCH_SIZE", "256"))
+_patience = int(os.environ.get("DRUGZIP_PATIENCE", "10"))
+_verbose = int(os.environ.get("DRUGZIP_VERBOSE", "0"))
 
 for kl_weight in kl_weights:
     # INITIALIZE W&B RUN
+    _run_name = os.environ.get(
+        "DRUGZIP_RUN_NAME", f"vae-full-kl-{kl_weight}-b{_batch_size}"
+    )
     run = wandb.init(
         project="Paper-DrugZip",
-        name=f"vae-full-kl-{kl_weight}-b256",
+        name=_run_name,
         config={
             "kl_weight": kl_weight,
             "latent_dim": 128,
             "learning_rate": 1e-4,
-            "epochs": 500,
-            "batch_size": 256,
+            "epochs": _epochs,
+            "batch_size": _batch_size,
             "layers": [2688, 2176, 1664, 1152, 768, 384],
             "scaling": None,
             "validation_fraction": 0.2,
             "split_seed": 42,
             "monitor": "val_loss",
-            "patience": 10,
-            "start_from_epoch": 0
+            "patience": _patience,
+            "start_from_epoch": 0,
+            "max_samples": _max_samples_from_env(),
         }
     )
 
@@ -216,9 +255,9 @@ for kl_weight in kl_weights:
         x_train,
         validation_data=(x_val,),
         shuffle=True,
-        epochs=500,          # Set high; EarlyStopping will act as the "brake"
-        batch_size=256, 
-        verbose=0,           # 1 shows the progress bar and the Loss per epoch
+        epochs=run.config.epochs,
+        batch_size=run.config.batch_size,
+        verbose=_verbose,
         callbacks=[early_stop, WandbMetricsLogger()]
     )
 
@@ -254,18 +293,22 @@ for kl_weight in kl_weights:
     vae.save(vae_keras_filename)
     vae.save(vae_h5_filename)
 
-    # Log files to wandb
-    run.log_artifact(compressed_filename, type="compressed_vectors")
-    run.log_artifact(reconstructed_filename, type="reconstructed_data")
-    run.log_artifact(encoder_keras_filename, type="encoder_model")
-    run.log_artifact(encoder_h5_filename, type="encoder_model")
-    run.log_artifact(vae_keras_filename, type="vae_model")
-    run.log_artifact(vae_h5_filename, type="vae_model")
+    # Prefer run.save over log_artifact: artifact staging does chmod, which
+    # fails on TU Delft NFS (PermissionError / Operation not permitted).
+    for _path in (
+        compressed_filename,
+        reconstructed_filename,
+        encoder_keras_filename,
+        encoder_h5_filename,
+        vae_keras_filename,
+        vae_h5_filename,
+    ):
+        run.save(_path, policy="now")
 
     print("\nCSV generated with shape:", compressed_data.shape)
     print(f"Reconstructed data saved with shape: {reconstructed_data.shape}")
     print(f"Models saved in both .keras and .h5 formats")
-    print(f"All files logged to wandb")
+    print(f"All files saved to wandb run")
     run.finish()
     
     del compressed_data, reconstructed_data, df_25in1, df_reconstructed
