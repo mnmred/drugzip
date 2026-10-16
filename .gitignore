@@ -11,6 +11,7 @@ __pycache__/
 slurm_*.out
 slurm_*.err
 logs/
+results/
 Data/ChemicalChecker_Full/
 *.keras
 *.h5

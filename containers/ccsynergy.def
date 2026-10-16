@@ -1,10 +1,11 @@
 Bootstrap: docker
 From: condaforge/miniforge3:latest
 
-# DrugZip / CCSynergy stack (README Environment Setup + tensorflow/wandb).
+# DrugZip / CCSynergy stack (README pins + tensorflow[and-cuda] + wandb).
 # Project code is NOT baked in — bind-mount the repo at runtime.
 # Build from the repo root so environment.yml is on the %files path:
 #   apptainer build containers/ccsynergy.sif containers/ccsynergy.def
+# Then copy/overwrite $PROJECTDIR/containers/ccsynergy.sif on the cluster.
 
 %files
     environment.yml /opt/environment.yml
@@ -39,8 +40,21 @@ From: condaforge/miniforge3:latest
     conda activate ccsynergy
 
     mkdir -p /opt/conda/envs/ccsynergy/etc/conda/activate.d
+    # IMPORTANT: append conda libs — never prepend over Apptainer --nv
+    # (/.singularity.d/libs must stay first so libcuda.so resolves).
     cat > /opt/conda/envs/ccsynergy/etc/conda/activate.d/env_vars.sh <<'EOF'
-export LD_LIBRARY_PATH=/opt/conda/envs/ccsynergy/lib:${LD_LIBRARY_PATH:-}
+_CCSY_LIB=/opt/conda/envs/ccsynergy/lib
+_CCSY_SITE="${_CCSY_LIB}/python3.10/site-packages"
+# Keep existing LD_LIBRARY_PATH (incl. /.singularity.d/libs from --nv) ahead of conda
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}${_CCSY_LIB}"
+# tensorflow[and-cuda] ships nvidia-*/lib wheels that TF dlopens at runtime
+if [ -d "${_CCSY_SITE}/nvidia" ]; then
+  for _nvlib in "${_CCSY_SITE}"/nvidia/*/lib "${_CCSY_SITE}"/nvidia/*/lib64; do
+    [ -d "${_nvlib}" ] && LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${_nvlib}"
+  done
+  export LD_LIBRARY_PATH
+fi
+unset _CCSY_LIB _CCSY_SITE _nvlib
 EOF
 
     conda clean -afy || true
@@ -48,7 +62,6 @@ EOF
 
     echo '. "/opt/conda/etc/profile.d/conda.sh"' >> "${APPTAINER_ENVIRONMENT}"
     echo 'conda activate ccsynergy' >> "${APPTAINER_ENVIRONMENT}"
-    echo 'export LD_LIBRARY_PATH=/opt/conda/envs/ccsynergy/lib:${LD_LIBRARY_PATH:-}' >> "${APPTAINER_ENVIRONMENT}"
 
 %environment
     export PATH="/opt/conda/bin:${PATH}"
@@ -58,18 +71,19 @@ EOF
     export MPLCONFIGDIR=/opt/.cache/matplotlib
     export MPLBACKEND=Agg
     export FONTCONFIG_PATH=/etc/fonts
+    # Prefer host driver libs injected by apptainer --nv
+    export NVIDIA_VISIBLE_DEVICES="${NVIDIA_VISIBLE_DEVICES:-all}"
+    export NVIDIA_DRIVER_CAPABILITIES="${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}"
 
 %runscript
     if [ $# -gt 0 ]; then
         exec "$@"
     else
         cat <<'EOF'
-ccsynergy / DrugZip dependency container (Python 3.10; README pins + tensorflow/wandb).
-Project code is NOT baked in — bind-mount the repo at runtime.
+ccsynergy / DrugZip (Python 3.10; tensorflow[and-cuda]).
+Use --nv on GPU nodes. Rebuild after environment.yml changes:
 
-  apptainer exec --nv --bind $PROJECTDIR:$PROJECTDIR \
-      $PROJECTDIR/containers/ccsynergy.sif \
-      python ae.py
+  apptainer build containers/ccsynergy.sif containers/ccsynergy.def
 EOF
     fi
 
@@ -99,12 +113,14 @@ print(
     "| wandb:", wandb.__version__,
     "| h5py:", h5py.__version__,
 )
+# GPU may be absent at build time; only check import of CUDA plugin path
+print("TF built with CUDA:", tf.test.is_built_with_cuda())
 PY
 
 %labels
     Author NiekBrouwer
-    Version 1.0.0
-    Description CCSynergy/DrugZip env from README; code bind-mounted at runtime
+    Version 1.1.0
+    Description CCSynergy/DrugZip + tensorflow[and-cuda]; code bind-mounted at runtime
 
 %help
     Build from the repo root (needs environment.yml on the build path):
@@ -112,17 +128,10 @@ PY
         cd /path/to/drugzip
         apptainer build containers/ccsynergy.sif containers/ccsynergy.def
 
-    Copy ccsynergy.sif to the cluster (e.g. $PROJECTDIR/containers/).
+    Install on cluster as $PROJECTDIR/containers/ccsynergy.sif
 
-    On the cluster, bind-mount the project (use --nv for GPU training):
+    GPU run:
 
         apptainer exec --nv --bind $PROJECTDIR:$PROJECTDIR \
             $PROJECTDIR/containers/ccsynergy.sif \
-            python ae.py
-
-    Interactive shell:
-
-        apptainer shell --nv --bind $PROJECTDIR:$PROJECTDIR \
-            $PROJECTDIR/containers/ccsynergy.sif
-
-    Keep environment.yml and this .def in sync when adding packages.
+            python -c "import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))"

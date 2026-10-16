@@ -18,6 +18,12 @@ def _ensure_trailing_sep(path: str) -> str:
     return path if path.endswith(("/", "\\")) else path + os.sep
 
 
+def _out_dir() -> str:
+    path = os.environ.get("DRUGZIP_OUT_DIR", "results")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
 # Usually in Matrix MxN, M is number of samples, N is number of features. This adapts our 
 # signature matrix accordingly.
 def _max_samples_from_env() -> int | None:
@@ -199,11 +205,7 @@ autoencoder.fit(
 del x_train, x_val, input_matrix
 input_matrix = build_input(directory_path)
 
-encoder.save("ae_encoder-do.keras")
-autoencoder.save("ae_full.keras")
-    
-# Logs the model to W&B
-run.save("ae_encoder-do.keras")
+out = _out_dir()
 
 # Generate the compressed signatures
 compressed_data = encoder.predict(input_matrix)
@@ -213,25 +215,35 @@ reconstructed_data = autoencoder.predict(input_matrix)
 
 # Save to CSV
 df_25in1 = pd.DataFrame(compressed_data)
-compressed_filename = f"ae-25in1-full-b{run.config.batch_size}.csv"
+compressed_filename = os.path.join(out, f"ae-25in1-full-b{run.config.batch_size}.csv")
 df_25in1.to_csv(compressed_filename, index=False)
 
 # Save reconstructed CSV
 df_reconstructed = pd.DataFrame(reconstructed_data)
-reconstructed_filename = f"ae-25in1-reconstructed-full-b256.csv"
+reconstructed_filename = os.path.join(out, "ae-25in1-reconstructed-full-b256.csv")
 df_reconstructed.to_csv(reconstructed_filename, index=False)
 
-
 # Save models in both formats
-encoder_keras_filename = f"ae-encoder-full-b256.keras"
-encoder_h5_filename = f"ae-encoder-full-b256.h5"
-vae_keras_filename = f"ae-full-b256.keras"
-vae_h5_filename = f"ae-full-b256.h5"
+encoder_keras_filename = os.path.join(out, "ae-encoder-full-b256.keras")
+encoder_h5_filename = os.path.join(out, "ae-encoder-full-b256.h5")
+ae_keras_filename = os.path.join(out, "ae-full-b256.keras")
+ae_h5_filename = os.path.join(out, "ae-full-b256.h5")
 
 encoder.save(encoder_keras_filename)
 encoder.save(encoder_h5_filename)
-vae.save(vae_keras_filename)
-vae.save(vae_h5_filename)
+autoencoder.save(ae_keras_filename)
+autoencoder.save(ae_h5_filename)
+
+for _path in (
+    compressed_filename,
+    reconstructed_filename,
+    encoder_keras_filename,
+    encoder_h5_filename,
+    ae_keras_filename,
+    ae_h5_filename,
+):
+    run.save(_path, policy="now")
 
 print("\nCSV generated with shape:", compressed_data.shape)
+print(f"Outputs written under {out}/")
 run.finish()

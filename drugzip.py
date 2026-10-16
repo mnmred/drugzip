@@ -23,6 +23,12 @@ def _ensure_trailing_sep(path: str) -> str:
     return path if path.endswith(("/", "\\")) else path + os.sep
 
 
+def _out_dir() -> str:
+    path = os.environ.get("DRUGZIP_OUT_DIR", "results")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
 # Usually in Matrix MxN, M is number of samples, N is number of features. This adapts our 
 # signature matrix accordingly.
 def _max_samples_from_env() -> int | None:
@@ -265,6 +271,8 @@ for kl_weight in kl_weights:
     del x_train, x_val, input_matrix
     input_matrix = build_input(directory_path)
 
+    out = _out_dir()
+
     # Generate the compressed signatures
     compressed_data = encoder.predict(input_matrix)
 
@@ -273,20 +281,23 @@ for kl_weight in kl_weights:
 
     # Save to CSV
     df_25in1 = pd.DataFrame(compressed_data)
-    compressed_filename = f"drugzip-25in1-full-{kl_weight}-b{run.config.batch_size}.csv"
+    compressed_filename = os.path.join(
+        out, f"drugzip-25in1-full-{kl_weight}-b{run.config.batch_size}.csv"
+    )
     df_25in1.to_csv(compressed_filename, index=False)
 
-    
     # Save reconstructed CSV
     df_reconstructed = pd.DataFrame(reconstructed_data)
-    reconstructed_filename = f"drugzip-reconstructed-full-{kl_weight}-b256.csv"
+    reconstructed_filename = os.path.join(
+        out, f"drugzip-reconstructed-full-{kl_weight}-b256.csv"
+    )
     df_reconstructed.to_csv(reconstructed_filename, index=False)
 
     # Save models in both formats
-    encoder_keras_filename = f"encoder-full-{kl_weight}-b256.keras"
-    encoder_h5_filename = f"encoder-full-{kl_weight}-b256.h5"
-    vae_keras_filename = f"vae-full-{kl_weight}-b256.keras"
-    vae_h5_filename = f"vae-full-{kl_weight}-b256.h5"
+    encoder_keras_filename = os.path.join(out, f"encoder-full-{kl_weight}-b256.keras")
+    encoder_h5_filename = os.path.join(out, f"encoder-full-{kl_weight}-b256.h5")
+    vae_keras_filename = os.path.join(out, f"vae-full-{kl_weight}-b256.keras")
+    vae_h5_filename = os.path.join(out, f"vae-full-{kl_weight}-b256.h5")
 
     encoder.save(encoder_keras_filename)
     encoder.save(encoder_h5_filename)
@@ -307,7 +318,7 @@ for kl_weight in kl_weights:
 
     print("\nCSV generated with shape:", compressed_data.shape)
     print(f"Reconstructed data saved with shape: {reconstructed_data.shape}")
-    print(f"Models saved in both .keras and .h5 formats")
+    print(f"Outputs written under {out}/")
     print(f"All files saved to wandb run")
     run.finish()
     
