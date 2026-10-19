@@ -179,6 +179,16 @@ def Prepare_OHE_Features(DIR, DATAset, CELLindex):
     return features
 
 def Synergy_Scores(DIR,DATAset):
+    """
+    Retrieves synergy scores from the specified dataset and prepares a response vector.
+    
+        Args:
+            DIR (str): Full path to the working directory.
+            DATAset (str): Dataset name (e.g., "Sanger").
+        
+        Returns:
+            np.ndarray: The response "Y" vector.
+    """
     data=pd.read_csv(str(DIR)+"Data/Synergy_Data/"+str(DATAset)+".csv")
     DD=np.array(data).shape[0]
     responses=np.zeros(((2*DD)))
@@ -188,9 +198,21 @@ def Synergy_Scores(DIR,DATAset):
         responses[(i+DD)]=Synergy[i]#B-A orientation      
     return responses
 
-
 def DNN(inputLength,n1=2000,n2=1000,n3=500,lr=0.0001,TASK=1):
- 
+    """
+        Creates a Deep Neural Network model for synergy prediction.
+    
+        Args:
+            inputLength (int): Length of the input feature vector.
+            n1 (int): Number of neurons in the first layer.
+            n2 (int): Number of neurons in the second layer.
+            n3 (int): Number of neurons in the third layer.
+            lr (float): Learning rate for the optimizer.
+            TASK (int): Task type, 1 for Regression and 2 for Classification.
+        
+        Returns:
+            keras.Model: Compiled Keras model ready for training.
+    """
     # Added for reproducibility
     initializer = tf.keras.initializers.HeNormal(seed=SEED)
 
@@ -208,8 +230,29 @@ def DNN(inputLength,n1=2000,n2=1000,n3=500,lr=0.0001,TASK=1):
        model.compile( optimizer=keras.optimizers.Adam(learning_rate=float(lr),beta_1=0.9, beta_2=0.999, amsgrad=False), loss = "binary_crossentropy", metrics=["accuracy"])
     return model
 
-
 def CCSynergy(DIR,DATAset,CELLindex,DRUGindex,n1,n2,n3,batch,lr,num,TASK,FOLDnumber,CVtype, FeatureVecorName=["drugzip-25in1-full-b256"]):
+    """
+        Performs synergy prediction using a Deep Neural Network model.
+    
+        Args:
+            DIR (str): Full path to the working directory.
+            DATAset (str): Dataset name (e.g., "Sanger").
+            CELLindex (int): Index for cell line representation method (1-5).
+            DRUGindex (int): Index for drug representation method (0-24).
+            n1 (int): Number of neurons in the first layer.
+            n2 (int): Number of neurons in the second layer.
+            n3 (int): Number of neurons in the third layer.
+            batch (int): Batch size for training.
+            lr (float): Learning rate for the optimizer.
+            num (int): Size of the input feature vector.
+            TASK (int): Task type, 1 for Regression and 2 for Classification.
+            FOLDnumber (int): Fold number for cross-validation (1-5).
+            CVtype (int): Cross-validation type, 1 for CV1, 2 for CV2, and 4 for CV4.
+            FeatureVecorName (list): List of feature vector names, defaulting to ["drugzip-25in1-full-b256"].
+        
+        Returns:
+            tf.keras.Model: The trained Deep Neural Network model.
+    """
     # Reading synergy data and indices
     data=pd.read_csv(str(DIR)+"Data/Synergy_Data/"+str(DATAset)+".csv")    
     Training=pd.read_csv(str(DIR)+f"Data/Cross_Validation_{CVtype}_F"+str(FOLDnumber)+"/Training_index.csv")## Needs to be modified depending on Cross validation scheme, synergy dataset and the testing fold
@@ -311,8 +354,7 @@ def CCSynergy(DIR,DATAset,CELLindex,DRUGindex,n1,n2,n3,batch,lr,num,TASK,FOLDnum
     Final['Prediction']=predict_test
     print("Results are saved in the working directory.")
     Final.to_csv((str(DIR)+'Results_'+str(DATAset)+'_CCSynergy'+str(CELLindex)+'_'+str(FeatureName[DRUGindex])+'_Fold'+str(FOLDnumber)+'_CV'+str(CVtype)+'.csv'))## The final output file 
-
-   
+ 
 def main():
     # Use main or call CCSynergy() function directly with the required parameters
     print("CCSynergy Program Started")
