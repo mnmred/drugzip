@@ -1,30 +1,34 @@
 # DrugZip a multimodal task-agnostic drug representation - Code for DrugZip, CCSynergy, ChemCPA, and Sensitivity DNN
 
-This repository contains the code for my thesis work at TU Delft. It provides the implementation and scripts necessary to generate DrugZip representations from a database of molecules, reproduce existing models (CCSynergy and ChemCPA), and train my custom Sensitivity Deep Neural Network (DNN).
+This repository contains the code accompanying the paper *DrugZip: a multimodal task-agnostic drug representation*.
 
-The full thesis can be found at the TU Delft Education Repository:
-[https://repository.tudelft.nl/record/uuid:10f9f08b-3059-4f3b-96ef-8b556a1b8404](https://repository.tudelft.nl/record/uuid:10f9f08b-3059-4f3b-96ef-8b556a1b8404)
+DrugZip compresses the 25 bioactivity signatures of the Chemical Checker (chemistry, targets, networks, cells and clinics) into a single 128-dimensional vector per molecule, using a variational autoencoder trained on about 1.2 million molecules. The resulting representation does not depend on any particular downstream task. The repository contains the code to train DrugZip and an autoencoder baseline. It also contains the code used to evaluate the representation on three downstream tasks, comparing it with other drug representations such as one-hot encodings, Morgan fingerprints and the individual Chemical Checker signatures.
+
+**Paper Abstract**: Small molecules are usually represented by their chemical structure, which overlooks their interactions in a broader biological context. The Chemical Checker (CC) addresses this by characterizing drugs across 25 bioactivity spaces, yielding a 3{,}200-dimensionsal profile per drug. We introduce DrugZip, a method for compressing these profiles into compact, task-agnostic embeddings, and compare it with variational and denoising autoencoders. DrugZip retains the stochastic encoder of a variational autoencoder but removes the KL regularization term. On 1.23 million compounds, we find that KL-regularized models suffer from latent space collapse, whereas both DrugZip and the denoising autoencoder (AE) learn non-collapsed representations. However, despite similar reconstruction quality, DrugZip preserves substantially more of the original bioactivity-space geometry, retaining 58\% of each drug's 10 nearest neighbors compared with 19\% for the denoising autoencoder. We evaluate the learned representations across drug synergy, sensitivity and transcriptional-response prediction. DrugZip achieves the highest mean AUC across three held-out-tissue synergy tiers, while other downstream evaluations show less consistent differences between representations. These findings demonstrate that avoiding collapse and achieving accurate reconstruction are not sufficient to assess drug embeddings and highlight the importance of evaluating their geometric properties alongside downstream predictive performance.
+
 
 ## Table of Contents
 - [Overview](#overview)
 - [Data](#data)
 - [Repository Structure](#repository-structure)
 - [Environment Setup](#environment-setup)
+- [Quick Start: Test Example](#quick-start-test-example)
 - [Usage](#usage)
   - [1. Generating DrugZip](#1-generating-drugzip)
   - [2. Reproducing CCSynergy](#2-reproducing-ccsynergy)
   - [3. Reproducing ChemCPA](#3-reproducing-chemcpa)
   - [4. Sensitivity DNN](#4-sensitivity-dnn)
+- [Relation to the Master's Thesis](#relation-to-the-masters-thesis)
 - [Citation](#citation)
 - [License](#license)
 
 ## Overview
 
-The primary objectives of this codebase are:
-1. **DrugZip Generation**: Processing a provided database of molecules to generate DrugZip embeddings/features.
-2. **CCSynergy Reproduction**: Replicating the CCSynergy architecture for baseline comparisons.
-3. **ChemCPA Reproduction**: Implementing the ChemCPA framework.
-4. **Sensitivity DNN**: Training and evaluating a custom Deep Neural Network designed for sensitivity predictions.
+The repository covers four parts:
+1. **DrugZip generation**: training the DrugZip model on the Chemical Checker signatures and exporting one vector per molecule.
+2. **Drug synergy prediction (CCSynergy)**: the CCSynergy model, used to compare drug representations for predicting synergistic drug pairs.
+3. **Perturbation response prediction (ChemCPA)**: fine-tuning ChemCPA on single-cell responses to drugs with different drug embeddings.
+4. **Drug sensitivity prediction (Sensitivity DNN)**: a deep neural network that predicts drug response (`LN_IC50`) in cancer cell lines.
 
 ## Data
 
@@ -57,7 +61,7 @@ Files larger than GitHub's 100 MB limit, such as the DrugZip output (`*-25in1-fu
 
 To ensure strict reproducibility (particularly for the CCSynergy and DNN reproduction), please use the exact environment specifications provided below.
 
-#### Option A: Apptainer containers (what the thesis runs used)
+#### Option A: Apptainer containers (used for the experiments)
 
 | Container | Definition | Used by |
 |---|---|---|
@@ -102,11 +106,23 @@ ChemCPA needs its own environment: `conda env create -f chemcpa/environment.yml`
 
 All training scripts log to [Weights & Biases](https://wandb.ai). No API key is stored in the repository. Run `wandb login` once or set `WANDB_API_KEY`. In `drugzip.py` and `ae.py`, also replace the `"Insert your W&B API key here"` placeholder or change the call to `wandb.login()`.
 
+## Quick Start: Test Example
+
+To check that DrugZip runs before using the full dataset, the repository includes a small example: the 25 Chemical Checker signatures of 200 molecules (`examples/drugzip/data/`). From the repository root:
+
+```bash
+bash examples/drugzip/run_example.sh
+```
+
+This trains DrugZip and the autoencoder baseline on those 200 molecules, in about two minutes on a CPU, and writes the vectors and models to `examples/drugzip/output/`. W&B logging is switched off. See [`examples/drugzip/README.md`](examples/drugzip/README.md) for the expected output and for running it inside the container.
+
+The downstream folders (`synergy/`, `chemcpa/`, `sensitivity/`) include their data, or a link to it, in their own READMEs.
+
 ## Usage
 
-### 1. Generating DrugZip
+The steps below describe the full workflow used in the paper.
 
-**Quick example:** `bash examples/drugzip/run_example.sh` trains DrugZip and the AE baseline on 200 included molecules in about two minutes on a CPU. See [`examples/drugzip/README.md`](examples/drugzip/README.md).
+### 1. Generating DrugZip
 
 1. Download the 25 Chemical Checker signature files (A1–E5) and convert them to CSV:
 
@@ -117,8 +133,15 @@ All training scripts log to [Weights & Biases](https://wandb.ai). No API key is 
 
    Each CSV gets one row per molecule: the InChIKey, then the 128 signature values (`V1`–`V128`). `drugzip.py` expects the files to be named `A1.csv` … `E5.csv`.
 
-2. Run `python drugzip.py`. It concatenates the 25 signatures into one 3,200-value input per molecule and trains a VAE: encoder 2688 → 2176 → 1664 → 1152 → 768 → 384 → 128-d latent, mirrored decoder, batch size 256, early stopping on a 20% validation split.
-   - `directory_path` sets the input folder.
+2. Point the scripts at that folder and run DrugZip:
+
+   ```bash
+   export DRUGZIP_DATA_DIR=Data/Drug_Representation/ChemicalChecker_Full/   # keep the trailing /
+   python drugzip.py
+   ```
+
+   It concatenates the 25 signatures into one 3,200-value input per molecule and trains a VAE: encoder 2688 → 2176 → 1664 → 1152 → 768 → 384 → 128-d latent, mirrored decoder, batch size 256, early stopping on a 20% validation split.
+   - Without `DRUGZIP_DATA_DIR`, the scripts look in `path/to/your/data/` (`directory_path` in the script).
    - `kl_weights` sets the KL weight(s) to train with (β; `0.0` is the default).
    - The input matrix (1,230,665 molecules × 3,200 values in float64, ~31.5 GB) is cached as `input_matrix.npy` in that folder. Plan memory accordingly.
 
@@ -129,7 +152,7 @@ All training scripts log to [Weights & Biases](https://wandb.ai). No API key is 
 
    Everything is also logged to the W&B project `Paper-DrugZip`. The downstream folders assume this row order matches `chemcpa/all_drugs_inchikeys.csv`.
 
-`ae.py` trains the deterministic autoencoder baseline on the same input (set `directory_path` first) and writes `ae-25in1-full-b256.csv`.
+`ae.py` trains the deterministic autoencoder baseline on the same input (also read from `DRUGZIP_DATA_DIR`) and writes `ae-25in1-full-b256.csv`.
 
 ### 2. Reproducing CCSynergy
 
@@ -155,9 +178,14 @@ See [`sensitivity/README.md`](sensitivity/README.md). The network predicts GDSC2
 
 Four evaluation settings are available: random pairs (CV1), unseen cancer types (CV2), unseen cell lines (CV3) and unseen drugs (CV4). Submit with `sbatch train_model1.sh` or `MODEL_FILE=<vector file> sbatch train_model2.sh`.
 
+## Relation to the Master's Thesis
+
+This work is a follow-up to a master's thesis completed at TU Delft (MSc Data Science and Artificial Intelligence Technology), available in the TU Delft Education Repository:
+[https://repository.tudelft.nl/record/uuid:10f9f08b-3059-4f3b-96ef-8b556a1b8404](https://repository.tudelft.nl/record/uuid:10f9f08b-3059-4f3b-96ef-8b556a1b8404)
+
 ## Citation
 
-If you use this code, please cite the thesis linked at the top of this page. The reproduced methods and data come from:
+If you use this code, please cite the paper *DrugZip: a multimodal task-agnostic drug representation* (the full reference will be added on publication). The reproduced methods and data come from:
 
 - **CCSynergy**: S.-R. Hosseini and X. Zhou, *CCSynergy: an integrative deep-learning framework enabling context-aware prediction of anti-cancer drug synergy*, Briefings in Bioinformatics, 2022. [doi:10.1093/bib/bbac588](https://doi.org/10.1093/bib/bbac588)
 - **ChemCPA**: L. Hetzel et al., *Predicting Cellular Responses to Novel Drug Perturbations at a Single-Cell Resolution*, NeurIPS 2022.
