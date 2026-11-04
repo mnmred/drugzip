@@ -380,6 +380,11 @@ def CCSynergy(DIR,DATAset,CELLindex,DRUGindex,n1,n2,n3,batch,lr,num,TASK,FOLDnum
     drug_a_importance = np.sum(mean_abs_shap[0:128])
     drug_b_importance = np.sum(mean_abs_shap[128:256])
     cell_line_importance = np.sum(mean_abs_shap[256:356])
+    # MF (Morgan fingerprints, Prepare_Features_SMILES): uncomment and comment out the three lines above
+    # nbits = 1024
+    # drug_a_importance    = np.sum(mean_abs_shap[0:nbits])
+    # drug_b_importance    = np.sum(mean_abs_shap[nbits:2*nbits])
+    # cell_line_importance = np.sum(mean_abs_shap[2*nbits:])
     
     total_importance = drug_a_importance + drug_b_importance + cell_line_importance
     
