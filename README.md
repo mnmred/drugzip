@@ -1,4 +1,4 @@
-# [Repo under updates] Master's Thesis (TU Delft - DSAIT Programme): DrugZip, CCSynergy, ChemCPA, and Sensitivity DNN
+# DrugZip a multimodal task-agnostic drug representation - Code for DrugZip, CCSynergy, ChemCPA, and Sensitivity DNN
 
 This repository contains the code for my thesis work at TU Delft. It provides the implementation and scripts necessary to generate DrugZip representations from a database of molecules, reproduce existing models (CCSynergy and ChemCPA), and train my custom Sensitivity Deep Neural Network (DNN).
 
@@ -105,6 +105,8 @@ All training scripts log to [Weights & Biases](https://wandb.ai). No API key is 
 ## Usage
 
 ### 1. Generating DrugZip
+
+**Quick example:** `bash examples/drugzip/run_example.sh` trains DrugZip and the AE baseline on 200 included molecules in about two minutes on a CPU. See [`examples/drugzip/README.md`](examples/drugzip/README.md).
 
 1. Download the 25 Chemical Checker signature files (A1–E5) and convert them to CSV:
 

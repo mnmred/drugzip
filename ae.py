@@ -22,7 +22,7 @@ def build_input(directory_path):
     else:
         print("Building input matrix...")
 
-    num_drugs = 1230665
+    num_drugs = sum(1 for _ in open(f"{directory_path}A1.csv")) - 1  # rows minus header (1,230,665 for the full set)
     matrix = np.zeros((num_drugs, 25 * 128))
     
     FeatureName = ['A1','A2','A3','A4','A5','B1','B2','B3','B4','B5',
@@ -102,7 +102,7 @@ def sum_squared_error(y_true, y_pred):
     return tf.reduce_sum(tf.square(y_true - y_pred), axis=-1)
 
 # --- EXECUTION ---
-directory_path = "path/to/your/data/"
+directory_path = os.environ.get("DRUGZIP_DATA_DIR", "path/to/your/data/")
 input_matrix = build_input(directory_path)
 
 run = wandb.init(

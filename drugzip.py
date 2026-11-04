@@ -27,7 +27,7 @@ def build_input(directory_path):
     else:
         print("Building input matrix...")
 
-    num_drugs = 1230665
+    num_drugs = sum(1 for _ in open(f"{directory_path}A1.csv")) - 1  # rows minus header (1,230,665 for the full set)
     matrix = np.zeros((num_drugs, 25 * 128))
     
     FeatureName = ['A1','A2','A3','A4','A5','B1','B2','B3','B4','B5',
@@ -169,7 +169,7 @@ def build_vae(input_matrix, latent_dim, kl_weight=1.0):
 
 # --- EXECUTION VAE ---
 kl_weights = [0.0]  # Different beta values to test
-directory_path = "Data/Drug_Representation/ChemicalChecker_Full/" # Replace with your actual path to the CSV files
+directory_path = os.environ.get("DRUGZIP_DATA_DIR", "path/to/your/data/") # Replace with your actual path to the CSV files
 input_matrix = build_input(directory_path)
 
 for kl_weight in kl_weights:
