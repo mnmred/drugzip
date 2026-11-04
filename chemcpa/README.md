@@ -2,7 +2,7 @@
 
 This folder contains the subset of my `chemCPA-reproduction` working copy that is needed to run three ChemCPA fine-tuning sweeps on a SLURM cluster. The ChemCPA code itself comes from [theislab/chemCPA](https://github.com/theislab/chemCPA) (MIT licence, see `LICENSE`); the run scripts, `misc.py` and `make_morgan_embedding.py` are my additions for plugging in different drug representations.
 
-Large data files, the container image and one config file are **not** included. They are listed under [What is missing](#what-is-missing) below.
+Large data files, the container image (its definition files are included) and one config file are **not** included. They are listed under [What is missing](#what-is-missing) below.
 
 ## The three runs
 
@@ -25,6 +25,8 @@ chemcpa/
 ├── make_morgan_embedding.py                   Morgan fingerprint parquet (run-own.sh)
 ├── misc.py                                    latent-CSV parquet (run-drugzip1.sh) + helper functions
 ├── all_drugs_inchikeys.csv                    row order of the 1.2M-drug files (one InChIKey per row)
+├── chemCPA.def, environment.yml               Apptainer definition of the base image
+├── update_wandb.def                           builds updated_chemCPA.sif (the image the scripts use) from chemCPA.sif
 ├── chemCPA/                                   model, data loading and train_hydra.py entry point
 ├── config/                                    Hydra configs used by the two fine-tuning setups
 └── embeddings/rdkit/chemCPA-rdkit_embeddings/
@@ -58,9 +60,24 @@ This is ChemCPA's preprocessed sci-Plex 3 subset (`sciplex_complete_middle_subse
 - `obs`: `condition`, `cov_drug_dose_name`, `dose_val`, `cell_type`, `SMILES`, `split_ood_finetuning`
 - `uns`: `lincs_DEGs`
 
-### 3. The Apptainer container (`$BULK/containers/updated_chemCPA.sif`)
+### 3. The Apptainer image (`$BULK/containers/updated_chemCPA.sif`)
 
-All Python runs inside this image. It needs the ChemCPA dependencies: PyTorch, Lightning, Hydra/OmegaConf, torchmetrics, torchvision, RDKit, anndata, scanpy, pandas/pyarrow, scikit-learn, h5py, sympy and wandb. The image and its definition file are not included.
+All Python runs inside this image. The image itself is not included (several GB), but you can rebuild it from the two definition files in this folder:
+
+| File | Builds |
+|---|---|
+| `chemCPA.def` (+ `environment.yml`) | `chemCPA.sif`: CUDA 11.3 / Ubuntu 20.04 base image with the `chemCPA` conda environment (Python 3.9, PyTorch 1.12.1, Lightning, Hydra, RDKit, scanpy, wandb, …) |
+| `update_wandb.def` | `updated_chemCPA.sif`: starts from `./chemCPA.sif` and pins `wandb==0.22.3`, `numpy<2.0` and `pandas<2.0.0`. This is the image the run scripts use. |
+
+From this folder:
+
+```bash
+apptainer build chemCPA.sif chemCPA.def
+apptainer build updated_chemCPA.sif update_wandb.def
+mkdir -p "$BULK/containers" && mv updated_chemCPA.sif "$BULK/containers/"
+```
+
+Depending on your cluster, `apptainer build` may need `--fakeroot`. The base image is large (~17 GB), so build it on a node with enough disk space.
 
 ### 4. Drug input files (per run)
 

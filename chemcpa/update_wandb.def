@@ -1,0 +1,12 @@
+Bootstrap: localimage
+From: ./chemCPA.sif
+
+%post
+    # 1. Update wandb to support the 86-character Identity Token
+    /opt/conda/envs/chemCPA/bin/pip install wandb==0.22.3
+    
+    # 2. Downgrade NumPy to prevent the "A module compiled using NumPy 1.x cannot run in 2.x" crash
+    /opt/conda/envs/chemCPA/bin/pip install "numpy<2.0"
+    
+    # 3. Downgrade Pandas to fix the "cannot import name is_categorical" error in Scanpy
+    /opt/conda/envs/chemCPA/bin/pip install "pandas<2.0.0"

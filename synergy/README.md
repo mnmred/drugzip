@@ -20,6 +20,8 @@ synergy/
 ├── script_cv4.py         runner for CV4
 ├── syn.sh, syn_cv4.sh    SLURM jobs that run script.py / script_cv4.py
 ├── Cross_Validation.R    generates the train/validation/test index files (CV1–CV4)
+├── synergy.def           Apptainer definition of the environment (built from synergy.lock.txt)
+├── synergy.lock.txt      exact conda package list (Python 3.10, CPU TensorFlow 2.15, RDKit, shap, wandb)
 └── Data/
     ├── Synergy_Data/         Sanger.csv (binary labels), Merck.csv (continuous scores)
     ├── Drug_Representation/  Drugs_Single_Info_<dataset>.csv + 25 Chemical Checker signatures (A1–E5) per dataset
@@ -82,7 +84,14 @@ Each splitter writes to the folder `synergy.py` reads. Use seed 28 to reproduce 
 
 ## Running
 
-Set up the environment as described in the main README. The scripts additionally import `tensorflow`, `wandb` and `shap`, and the SMILES option also needs `rdkit`.
+The runs used the Apptainer container defined in `synergy.def`, which recreates the exact environment from `synergy.lock.txt`. Build it once from this folder (`synergy.def` copies the lockfile from the current directory):
+
+```bash
+apptainer build synergy.sif synergy.def      # may need --fakeroot on your cluster
+apptainer run synergy.sif script.py          # runs python inside the container
+```
+
+To use it from SLURM, replace `srun python script.py` in `syn.sh` with `srun apptainer run synergy.sif script.py`. TensorFlow in the image is the CPU build. Without the container, set up the conda environment described in the main README.
 
 The runners use `DIR=""`, so run them from this folder:
 

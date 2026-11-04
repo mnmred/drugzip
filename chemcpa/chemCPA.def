@@ -1,0 +1,92 @@
+Bootstrap: docker
+From: nvidia/cuda:11.3.1-cudnn8-devel-ubuntu20.04
+
+%files
+    environment.yml /environment.yml
+
+%post
+    export DEBIAN_FRONTEND=noninteractive 
+    export TZ=Europe/Amsterdam
+    apt-get update
+    apt-get install -y tzdata
+    ln -snf /usr/share/zoneinfo/$TZ /etc/localtime
+    echo $TZ > /etc/timezone
+
+    # Update and install necessary packages
+    apt-get update && apt-get install -y --no-install-recommends \
+        tree \
+        time \
+        vim \
+        ncdu \
+        build-essential \
+        git \
+        wget \
+        curl \
+        ca-certificates \
+        git-lfs \
+        tmux \
+        rsync \
+        openssh-server \
+        libsndfile-dev \
+        software-properties-common \
+    && rm -rf /var/lib/apt/lists/*
+
+    # Install Miniforge3 (includes mamba)
+    wget -O Miniforge3.sh "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh"
+    bash Miniforge3.sh -b -p /opt/conda
+    rm Miniforge3.sh
+    export PATH="/opt/conda/bin:${PATH}"
+
+    # Create conda environment using mamba (faster than conda)
+    mamba env create --quiet --file /environment.yml
+
+    # Install additional pip packages
+    # Note: chemCPA package will be installed at runtime when repo is mounted
+    . /opt/conda/etc/profile.d/conda.sh && \
+        conda activate chemCPA && \
+        pip install sfaira descriptastorus gdown jupytext
+
+    # Set LD_LIBRARY_PATH for CUDA libraries
+    mkdir -p /opt/conda/envs/chemCPA/etc/conda/activate.d && \
+        echo "export LD_LIBRARY_PATH=/opt/conda/envs/chemCPA/lib:\$LD_LIBRARY_PATH" > \
+        /opt/conda/envs/chemCPA/etc/conda/activate.d/env_vars.sh
+
+    # Create jupyter config directory
+    mkdir -p /root/.jupyter
+    echo "c.NotebookApp.allow_origin = '*'" > /root/.jupyter/jupyter_notebook_config.py
+    echo "c.NotebookApp.allow_credentials = True" >> /root/.jupyter/jupyter_notebook_config.py
+
+    # Clean up
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+    mamba clean --all -y
+
+    # Add script to activate the Conda environment
+    echo '. "/opt/conda/etc/profile.d/conda.sh"' >> $APPTAINER_ENVIRONMENT
+    echo 'conda activate chemCPA' >> $APPTAINER_ENVIRONMENT
+    echo 'export LD_LIBRARY_PATH=/opt/conda/envs/chemCPA/lib:$LD_LIBRARY_PATH' >> $APPTAINER_ENVIRONMENT
+
+%environment
+    export PATH="/opt/conda/bin:${PATH}"
+    export PYTHONUNBUFFERED=1
+
+%help
+    This container provides a Python 3.9 environment with chemCPA dependencies
+    including PyTorch with CUDA 11.3 support, scanpy, rdkit, and scientific computing libraries.
+    
+    Before use, mount the chemCPA repository and install the package:
+    apptainer exec --nv --bind /path/to/chemCPA:/chemCPA chemCPA.sif \
+        bash -c "conda activate chemCPA && cd /chemCPA && pip install -e ."
+    
+    Usage examples:
+    - Run a Python script: apptainer exec --nv --bind /path/to/chemCPA:/chemCPA chemCPA.sif python script.py
+    - Interactive Python: apptainer exec --nv chemCPA.sif python
+    - Jupyter notebook: apptainer exec --nv chemCPA.sif jupyter notebook
+    - Shell access: apptainer shell --nv chemCPA.sif
+    - Run training: apptainer exec --nv --bind /path/to/chemCPA:/chemCPA chemCPA.sif python /chemCPA/chemCPA/train_hydra.py
+    
+    Note: Use --nv flag to enable NVIDIA GPU support.
+
+%labels
+    Author chemCPA
+    Version 1.0.0
+    Description Container for chemCPA - Predicting Cellular Responses to Novel Drug Perturbations

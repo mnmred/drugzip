@@ -1,0 +1,36 @@
+Bootstrap: docker
+From: mambaorg/micromamba:1.5.10-bookworm-slim
+
+%labels
+    org.opencontainers.image.title synergy
+    org.opencontainers.image.description CCSynergy conda environment (Python 3.10, CPU TensorFlow 2.15, RDKit)
+
+%help
+    The "synergy" conda environment, rebuilt from an exact package lockfile.
+
+    Run a script:      apptainer run synergy.sif CCSynergy.py [args]
+    Run any command:   apptainer exec synergy.sif <command>
+    Interactive:       apptainer shell synergy.sif
+
+    The current directory, $HOME and /tmp are mounted automatically. Bind
+    other paths with --bind, e.g. --bind "$BULK". TensorFlow is the CPU build.
+
+%files
+    synergy.lock.txt /opt/synergy.lock.txt
+
+%post
+    set -eu
+    export MAMBA_ROOT_PREFIX=/opt/conda
+    micromamba create -y -p /opt/synergy -f /opt/synergy.lock.txt
+    micromamba clean -afy
+    rm -rf /opt/conda/pkgs
+
+%environment
+    export CONDA_PREFIX=/opt/synergy
+    export CONDA_DEFAULT_ENV=synergy
+    export PATH=/opt/synergy/bin:$PATH
+    # $HOME is mounted, so keep packages in ~/.local out of the container's Python
+    export PYTHONNOUSERSITE=1
+
+%runscript
+    exec python "$@"
