@@ -35,7 +35,7 @@ The downstream models use further public datasets. Each folder's README says whi
 
 | Folder | Data |
 |---|---|
-| `synergy/` | CCSynergy's Sanger and Merck drug-synergy data, cell-line representations and Chemical Checker signatures (included) |
+| `synergy/` | CCSynergy's Sanger drug-synergy data, cell-line representations and Chemical Checker signatures (included) |
 | `chemcpa/` | ChemCPA's preprocessed sci-Plex 3 dataset (not included, ~1.4 GB) |
 | `sensitivity/` | GDSC2 drug response (`LN_IC50`) and cell-line vectors (main tables included) |
 
