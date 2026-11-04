@@ -23,6 +23,8 @@ import wandb
 from wandb.integration.keras import WandbCallback
 from sklearn.metrics import roc_auc_score, accuracy_score, f1_score
 import shap
+from rdkit import Chem
+from rdkit.Chem import rdFingerprintGenerator
 
 # Set seed for reproducibility
 SEED = 42
@@ -112,6 +114,64 @@ def Prepare_Features_Concatenated(DIR,DATAset,CELLindex):
         features[i,:]=np.concatenate((DF[d1-1,:],DF[d2-1,:],np.array(cell_features[cell])),axis=0)#A-B orientation
         features[(i+DD),:]=np.concatenate((DF[d2-1,:],DF[d1-1,:],np.array(cell_features[cell])),axis=0)#B-A orientation
         print(i)
+    return features
+
+def Prepare_Features_SMILES(DIR,DATAset,CELLindex, nbits=1024):
+    """
+        Prepares features using Morgan fingerprints computed from the drugs'
+        SMILES strings, concatenated with Cell Line features.
+
+        Args:
+            DIR (str): Full path to the working directory.
+            DATAset (str): Dataset name (e.g., "Sanger").
+            CELLindex (int): Cell line index.
+            nbits (int): Size of the Morgan fingerprint (default 1024).
+
+        Returns:
+            np.ndarray: The concatenated feature matrix.
+    """
+    data = pd.read_csv(str(DIR) + "Data/Synergy_Data/" + str(DATAset) + ".csv")
+    cell_features = pd.read_csv(str(DIR) + "Data/Cell_Representation/Cell" + str(CELLindex) + ".csv")
+
+    bulk = os.environ["BULK"]
+    smiles_path = os.path.join(bulk, "Sensitivity", "dataset", "Drugs", "SMILES",
+                               "smiles_no_key_duplicates.csv")
+    df_drugs = pd.read_csv(smiles_path, header=None, names=["key", "smiles"])
+    drugs_location = [267537, 949222, 1201817, 901593, 828987, 1011120, 390035,
+                          357352, 498965, 1111233, 540645, 299349, 1012489, 554580,
+                          494590, 62047, 433906, 1183005, 1187828, 599545, 382443,
+                          782, 397699, 870011, 1158463, 969916, 179507, 1112338,
+                          55299, 1125014, 730370, 614924, 72201, 947722, 429319,
+                          320080, 406956, 210068, 440410, 816526, 14624, 197492,
+                          206025, 522424, 827414, 1106617, 315251, 162848, 411293,
+                          1040951, 310322, 579991, 60295, 80488, 258357, 524698,
+                          46568, 539191, 255728, 1027781, 182087, 672435]
+    drugs = df_drugs.iloc[drugs_location]
+    gen = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=nbits)
+    DF = np.zeros((len(drugs), nbits), dtype=np.float32)  # row k = drug k+1
+    for k, (key, smi) in enumerate(zip(drugs["key"], drugs["smiles"])):
+        mol = None if pd.isna(smi) else Chem.MolFromSmiles(smi)
+        if mol is None:
+            print(f"Warning: invalid/missing SMILES for {key}, using zero vector")
+            continue
+        DF[k] = gen.GetFingerprintAsNumPy(mol)
+
+    print(drugs["key"].tolist()[:5], len(df_drugs))
+    print("zero fingerprints:", int((DF.sum(axis=1) == 0).sum()), "of", len(DF))
+    assert DF.shape == (62, nbits)
+
+    DD = data.shape[0]
+    data.Cell_Line = data.Cell_Line.astype(str)
+    n_feat = 2 * nbits + cell_features.shape[0]          # 2048 + 100 = 2148
+    features = np.zeros((2 * DD, n_feat), dtype=np.float32)
+    assert n_feat == 2 * nbits + 100
+
+    for i in range(DD):
+        d1 = data.Index1[i]
+        d2 = data.Index2[i]
+        cell_vec = np.array(cell_features[str(data.Cell_Line[i]).strip()])
+        features[i, :]      = np.concatenate((DF[d1-1], DF[d2-1], cell_vec))  # A-B
+        features[i + DD, :] = np.concatenate((DF[d2-1], DF[d1-1], cell_vec))  # B-A
     return features
 
 def Prepare_OHE_Features(DIR, DATAset, CELLindex):
@@ -263,6 +323,7 @@ def CCSynergy(DIR,DATAset,CELLindex,DRUGindex,n1,n2,n3,batch,lr,num,TASK,FOLDnum
     # X = Prepare_Features_Baseline(DIR,DATAset,DRUGindex,CELLindex)
     X = Prepare_Features_Concatenated(DIR, DATAset, CELLindex)
     # X = Prepare_OHE_Features(DIR, DATAset, CELLindex)
+    # X = Prepare_Features_SMILES(DIR, DATAset, CELLindex, nbits=1024)
 
     num = X.shape[1]
     Y=Synergy_Scores(DIR,DATAset)
