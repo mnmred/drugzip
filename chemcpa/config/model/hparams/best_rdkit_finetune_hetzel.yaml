@@ -1,0 +1,26 @@
+# Fixed from pretrained model ejcdn21z (must match checkpoint architecture)
+dim: 32
+dropout: 0.268114045727
+autoencoder_width: 256
+autoencoder_depth: 3  # must match best_rdkit_pretrain (ejcdn21z)
+dosers_width: 64
+dosers_depth: 1  # must match best_rdkit_pretrain (ejcdn21z)
+step_size_lr: 50
+embedding_encoder_width: 512
+embedding_encoder_depth: 3  # must match best_rdkit_pretrain (ejcdn21z)
+
+# These are retrieved from finetuned model checkpoint (trained by Hetzel et al.)
+adversary_depth: 4
+adversary_lr: 0.00011426627628169611
+adversary_steps: 3
+adversary_wd: 6.02521573620385e-08
+adversary_width: 256
+autoencoder_lr: 0.00020511104188433984
+autoencoder_wd: 2.93753845763282e-08
+batch_size: 64 # changed so speed up training
+dosers_lr: 0.00020511104188433984
+dosers_wd: 2.93753845763282e-08
+penalty_adversary: 0.08889607461211929
+reg_adversary: 1.7779214922423854
+reg_adversary_cov: 7.705594012729585
+reg_multi_task: 0

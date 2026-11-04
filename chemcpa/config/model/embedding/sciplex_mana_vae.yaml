@@ -1,0 +1,2 @@
+datapath: /path/to/chemCPA-reproduction/embeddings/mana_vae/sciplex_complete_middle_subset_lincs_genes_v2_mana_vae_embedding.parquet
+model: rdkit

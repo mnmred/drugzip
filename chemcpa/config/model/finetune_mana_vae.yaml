@@ -1,0 +1,11 @@
+defaults:
+  - hparams: best_rdkit_finetune_hetzel
+  - embedding: sciplex_mana_vae
+  - additional_params: best_rdkit_finetune
+
+enable_cpa_mode: False
+load_pretrained: True
+append_ae_layer: False
+pretrained_model_path: ${training.save_dir}
+pretrained_model_hashes: 
+  model: ejcdn21z   

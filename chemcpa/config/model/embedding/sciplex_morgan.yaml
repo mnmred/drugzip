@@ -1,0 +1,2 @@
+datapath: /path/to/chemCPA-reproduction/embeddings/morgan_r2_1024/sciplex_complete_middle_subset_lincs_genes_v2_morgan_r2_1024_embedding.parquet
+model: rdkit
