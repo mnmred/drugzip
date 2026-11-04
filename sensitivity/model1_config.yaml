@@ -1,0 +1,34 @@
+# Model 1 Configuration File
+# Optional: Customize training parameters here
+
+# Project and Entity Settings
+project_name: "sensitivity-analysis"
+entity_name: null  # Set to your wandb username if desired
+
+# Training Parameters
+n_splits: 5          # Number of cross-validation folds
+epochs: 500          # Maximum training epochs (early stopping may stop earlier)
+batch_size: 64       # Batch size for training
+learning_rate: 0.001 # Adam optimizer learning rate
+
+# Feature Parameters
+nbits: 1024          # Number of bits for Morgan fingerprints
+fingerprint_radius: 2 # Radius for Morgan fingerprint
+
+# Model Architecture
+hidden_layers: [256, 128, 64]  # Hidden layer dimensions
+dropout_rate: 0.3    # Dropout rate
+
+# Early Stopping
+early_stopping_patience: 15  # Epochs to wait before stopping
+early_stopping_monitor: "val_loss" # Metric to monitor
+
+# Data Paths (relative to script location)
+main_data_path: "dataset/GDSC2_cnd_overlap_with_positions.csv"
+cell_data_path: "dataset/Cells/Cell1.csv"
+smiles_data_path: "dataset/Drugs/SMILES/smiles.csv"
+output_dir: "results"
+
+# Logging
+verbose: 1  # 0=silent, 1=progress, 2=detailed
+save_best_models: true
